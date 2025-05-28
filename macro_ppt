@@ -1,0 +1,231 @@
+Option Explicit
+'==============================================================
+'  Finance UAT – Pre-Kickoff Deck Generator
+'  Creates 12 slides with all titles & content populated
+'==============================================================
+Sub CreateFinanceUATDeck()
+
+    Dim ppt As Presentation
+    Dim sld As Slide
+    Dim shp As Shape
+    Dim i As Long
+    
+    '--- start a clean presentation ---
+    Set ppt = Presentations.Add
+    
+    '----------------------------------------------------------
+    ' 1. Title slide
+    '----------------------------------------------------------
+    Set sld = ppt.Slides.Add(1, ppLayoutTitle)
+    sld.Shapes.Title.TextFrame.TextRange.Text = "Pre-Kickoff Meeting" & vbCrLf & "Finance UAT Cycle – PeopleSoft P2"
+    sld.Shapes(2).TextFrame.TextRange.Text = _
+        "Data-Center Migration + PeopleTools Upgrade" & vbCrLf & _
+        Format(Date, "dd mmm yyyy")
+    
+    '----------------------------------------------------------
+    ' 2. Meeting Objectives
+    '----------------------------------------------------------
+    Set sld = AddBulletSlide(ppt, "Meeting Objectives", _
+        Array( _
+            "Align on **scope, timeline, and ownership** for UAT", _
+            "Confirm **critical scenarios** each region must run", _
+            "Lock **support & escalation model**", _
+            "Surface any **risks or constraints** before we start", _
+            "Goal: _No surprises when the test window opens_"))
+    
+    '----------------------------------------------------------
+    ' 3. Program Overview & Scope
+    '----------------------------------------------------------
+    Set sld = ppt.Slides.Add(ppt.Slides.Count + 1, ppLayoutText)
+    sld.Shapes.Title.TextFrame.TextRange.Text = "Program Overview & Scope"
+    sld.Shapes(2).TextFrame.TextRange.Text = _
+        "• **Why:** New, more resilient data-center + PeopleTools uplift" & vbCrLf & _
+        "• **What’s changing:** Infrastructure only – _no functional change_" & vbCrLf & _
+        "• **In-scope modules:** BI, AR, AP, PC, GL, AM, Metadata" & vbCrLf & _
+        "• **Touch-points:** Coupa ↔ PeopleSoft ↔ HighRadius ↔ Kyriba ↔ OneStream" & vbCrLf & _
+        "• **Out of scope:** HR, SCM, Payroll, Analytics"
+    
+    '----------------------------------------------------------
+    ' 4. Test Approach & Timeline (simple table)
+    '----------------------------------------------------------
+    Set sld = ppt.Slides.Add(ppt.Slides.Count + 1, ppLayoutText)
+    sld.Shapes.Title.TextFrame.TextRange.Text = "Test Approach & Timeline"
+    Const hdr = "Milestone|Date|Notes"
+    Dim plan As Variant
+    plan = Array( _
+        "DB Refresh|31 May|Copy prod to UAT; mask PII", _
+        "Dry-run Cycle 1|03 – 05 Jun|Smoke check; env. validation", _
+        "Main UAT Window|06 – 21 Jun|Daily testing 08:00-18:00", _
+        "Defect-Fix Cut-off|19 Jun|Post cut-off = go/no-go call", _
+        "Regression Sweep|22 – 23 Jun|Re-run failed / high-risk flows", _
+        "Exit Review|25 Jun|Sign-off & readiness confirmation")
+    Call BuildTableOnSlide(sld, hdr, plan)
+    sld.NotesPage.Shapes.Placeholders(2).TextFrame.TextRange.Text = _
+        "Daily stand-up @ 09:00   War-Room if ≥3 Sev-1 open"
+    
+    '----------------------------------------------------------
+    ' 5. Critical End-to-End Scenarios (big table)
+    '----------------------------------------------------------
+    Set sld = ppt.Slides.Add(ppt.Slides.Count + 1, ppLayoutText)
+    sld.Shapes.Title.TextFrame.TextRange.Text = "Critical End-to-End Scenarios"
+    Dim scen As Variant
+    scen = Array( _
+      "Flow / Module|Must-Run Scenarios|Owner", _
+      "Order-to-Cash (BI→AR)|Invoice Excel Upload → Finalize & Print → AR Open Item¶Invoice Online Entry¶Send Invoice to HighRadius|Regional SME + FINSSYS", _
+      "Receivables (AR)|Customer Payment Application¶Deposit Excel/Bank file¶AR Adjustment¶Send Open Items to eIPP|Regional SME + FINSSYS", _
+      "Procure-to-Pay (AP↔Coupa)|Coupa PO → Voucher Interface¶Supplier Create / Update¶Voucher Workflow / Excel Upload¶Payment Run → Kyriba file → Status back|Regional SME + IT", _
+      "Asset Lifecycle (AM)|Asset Addition¶Depreciation run¶Retirement / Disposal|FINSSYS + Regional SME", _
+      "Project Costing → GL|Project Transaction Import¶Cost Post¶GL Journal Entry & Approval¶nVision reports|IT + FINSSYS", _
+      "Metadata|Create New Customer¶Send Customer Master to eIPP|Regional SME + FINSSYS", _
+      "Technical / Infra|NAS file pick-up (EDEG)¶Kyriba file transmission¶IB Sync & Async¶GoldenGate replication¶OneStream JDBC feed¶Email stress test¶File-archival housekeeping|IT / FINSSYS")
+    Call BuildTableOnSlide(sld, scen(0), scen, True)
+    
+    '----------------------------------------------------------
+    ' 6. Success Criteria
+    '----------------------------------------------------------
+    Set sld = AddBulletSlide(ppt, "Success Criteria", _
+        Array( _
+            "1. **Zero errors** in Process Monitor or logs", _
+            "2. **Data matches** downstream system or report", _
+            "3. **Evidence captured** (screenshot or log ID) in UAT workbook"))
+    
+    '----------------------------------------------------------
+    ' 7. Roles & Responsibilities
+    '----------------------------------------------------------
+    Set sld = ppt.Slides.Add(ppt.Slides.Count + 1, ppLayoutText)
+    sld.Shapes.Title.TextFrame.TextRange.Text = "Roles & Responsibilities"
+    Const hdrRoles = "Role|Owner|Backup|Key Duties"
+    Dim rr As Variant
+    rr = Array( _
+        "Regional SME|Region Finance Lead|–|Execute test cases; record results", _
+        "FINSSYS|Jalaj Mehta|Naveen Adduri|Functional support; defect triage", _
+        "IT Support|Suresh Grandhi|Satish Cherukupalli|Env. uptime; data refresh; fixes", _
+        "QA / Test Lead|QA Manager|–|Track defects; metrics; entry/exit", _
+        "PMO|Jalaj Mehta|–|Schedule; comms; risk log")
+    Call BuildTableOnSlide(sld, hdrRoles, rr)
+    sld.NotesPage.Shapes.Placeholders(2).TextFrame.TextRange.Text = _
+        "Daily 15-min stand-up  |  Slack channel #uat-finsys"
+    
+    '----------------------------------------------------------
+    ' 8. Environment & Data Readiness
+    '----------------------------------------------------------
+    Set sld = AddBulletSlide(ppt, "Environment & Data Readiness", _
+        Array( _
+            "Refresh **31 May** → snapshot prod → mask PII", _
+            "Batch IDs, run controls, security roles **cloned**", _
+            "MFA & SSO unchanged – new URL only", _
+            "Interface blackout windows shared in run-book", _
+            "Smoke check ownership: IT hand-off to QA before dry-run"))
+    
+    '----------------------------------------------------------
+    ' 9. Defect Management
+    '----------------------------------------------------------
+    Set sld = AddBulletSlide(ppt, "Defect Management", _
+        Array( _
+            "**Workflow:** Open → Triaged → In Dev → Ready for Retest → Closed", _
+            "**Sev-1:** system down / financial impact – fix ≤ 4 hrs", _
+            "**Sev-2:** blocks core flow – fix ≤ 1 day", _
+            "**Sev-3:** cosmetic – post-go-live backlog", _
+            "Log in **Jira project UAT-P2** → auto-notify Slack", _
+            "War-Room if 3× Sev-1 _or_ any Sev-1 > 4 hrs open"))
+    
+    '----------------------------------------------------------
+    ' 10. Entry & Exit Criteria
+    '----------------------------------------------------------
+    Set sld = ppt.Slides.Add(ppt.Slides.Count + 1, ppLayoutText)
+    sld.Shapes.Title.TextFrame.TextRange.Text = "Entry & Exit Criteria"
+    Dim gates As Variant
+    gates = Array( _
+      "Phase|Gate|Criteria", _
+      "Entry|Start UAT|Env. refreshed¶Test data seeded¶All users have access", _
+      "Exit|Sign-off|0 Sev-1 • ≤5 open Sev-2 with workarounds¶100 % critical scenarios passed¶Signed evidence uploaded")
+    Call BuildTableOnSlide(sld, gates(0), gates, True)
+    sld.Shapes(2).TextFrame.TextRange.Text = sld.Shapes(2).TextFrame.TextRange.Text & vbCrLf & _
+        "Signatories: Regional SMEs, FINSSYS Lead, IT Lead, PMO"
+    
+    '----------------------------------------------------------
+    ' 11. Risks & Dependencies
+    '----------------------------------------------------------
+    Set sld = ppt.Slides.Add(ppt.Slides.Count + 1, ppLayoutText)
+    sld.Shapes.Title.TextFrame.TextRange.Text = "Risks & Dependencies"
+    Dim risk As Variant
+    risk = Array( _
+      "Risk / Constraint|Impact|Mitigation", _
+      "Chromium download block on VDI|Can't run Excel Upload macro|Pre-install runtime package", _
+      "SSO browser popup blocked|Users can't log in|Publish new URL allow-list", _
+      "GoldenGate lag > 5 min|Data mismatch reports|Add extra replica lag monitor", _
+      "Competing infra release|Resource contention|Freeze window on change board")
+    Call BuildTableOnSlide(sld, risk(0), risk)
+    
+    '----------------------------------------------------------
+    ' 12. Next Steps & Q&A
+    '----------------------------------------------------------
+    Set sld = ppt.Slides.Add(ppt.Slides.Count + 1, ppLayoutText)
+    sld.Shapes.Title.TextFrame.TextRange.Text = "Next Steps & Q&A"
+    Const hdrNext = "Owner|Action|Due"
+    Dim nxt As Variant
+    nxt = Array( _
+        "PMO|Distribute deck + minutes|EOD today", _
+        "SMEs|Confirm / add scenarios|EOD tomorrow", _
+        "QA|Publish UAT workbook link|31 May", _
+        "IT|Complete smoke check & hand-off|02 Jun")
+    Call BuildTableOnSlide(sld, hdrNext, nxt)
+    sld.Shapes(2).TextFrame.TextRange.Text = sld.Shapes(2).TextFrame.TextRange.Text & vbCrLf & _
+        vbCrLf & "Questions, concerns, blockers?"
+    
+    MsgBox "Finance UAT deck created – apply your theme & save!", vbInformation
+
+End Sub
+
+'==========  HELPER ROUTINES  ===================================
+' Quickly add a Title + bullets slide
+Private Function AddBulletSlide(ppt As Presentation, ttl As String, bullets As Variant) As Slide
+    Dim sld As Slide, i As Long
+    Set sld = ppt.Slides.Add(ppt.Slides.Count + 1, ppLayoutText)
+    sld.Shapes.Title.TextFrame.TextRange.Text = ttl
+    For i = LBound(bullets) To UBound(bullets)
+        With sld.Shapes(2).TextFrame.TextRange
+            If i = 0 Then
+                .Text = bullets(i)
+            Else
+                .Paragraphs(.Paragraphs.Count).InsertAfter vbCrLf & bullets(i)
+            End If
+        End With
+    Next i
+    Set AddBulletSlide = sld
+End Function
+
+' Build a table from header string & data array
+' If allowMultiLines=True, use ¶ token inside cell text to split into line breaks
+Private Sub BuildTableOnSlide(sld As Slide, hdr As String, data As Variant, Optional allowMultiLines As Boolean = False)
+    Dim rows As Long, cols As Long, i As Long, j As Long
+    Dim tbl As Shape, cellText As String
+    Dim hdrArr As Variant
+    
+    hdrArr = Split(hdr, "|")
+    cols = UBound(hdrArr) + 1
+    rows = UBound(data) + 1          ' + header row handled separately below
+    
+    ' insert table shape (left, top, width, height)
+    Set tbl = sld.Shapes.AddTable(rows + 1, cols, 40, 100, 820, 300)
+    
+    '--- header ---
+    For j = 1 To cols
+        tbl.Table.Cell(1, j).Shape.TextFrame.TextRange.Text = hdrArr(j - 1)
+        tbl.Table.Cell(1, j).Shape.TextFrame.TextRange.Font.Bold = True
+    Next j
+    
+    '--- body rows ---
+    For i = 0 To UBound(data)
+        Dim cells As Variant
+        cells = Split(data(i), "|")
+        For j = 1 To cols
+            cellText = IIf(j <= UBound(cells) + 1, cells(j - 1), "")
+            If allowMultiLines Then cellText = Replace(cellText, "¶", vbCrLf)
+            tbl.Table.Cell(i + 2, j).Shape.TextFrame.TextRange.Text = cellText
+        Next j
+    Next i
+    tbl.Table.Columns(1).Width = 160   ' adjust widths a bit
+    tbl.Table.Columns(2).Width = 420
+    tbl.Table.Columns(tbl.Table.Columns.Count).Width = 210
+End Sub
