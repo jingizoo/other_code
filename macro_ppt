@@ -194,38 +194,45 @@ Private Function AddBulletSlide(ppt As Presentation, ttl As String, bullets As V
     Next i
     Set AddBulletSlide = sld
 End Function
-
 ' Build a table from header string & data array
 ' If allowMultiLines=True, use ¶ token inside cell text to split into line breaks
-Private Sub BuildTableOnSlide(sld As Slide, hdr As String, data As Variant, Optional allowMultiLines As Boolean = False)
+Private Sub BuildTableOnSlide( _
+        sld As Slide, _
+        ByVal hdr As String, _
+        data As Variant, _
+        Optional allowMultiLines As Boolean = False)
+
     Dim rows As Long, cols As Long, i As Long, j As Long
     Dim tbl As Shape, cellText As String
     Dim hdrArr As Variant
     
     hdrArr = Split(hdr, "|")
     cols = UBound(hdrArr) + 1
-    rows = UBound(data) + 1          ' + header row handled separately below
+    rows = UBound(data) + 1          ' body rows
     
-    ' insert table shape (left, top, width, height)
+    ' insert table (left, top, width, height)
     Set tbl = sld.Shapes.AddTable(rows + 1, cols, 40, 100, 820, 300)
     
     '--- header ---
     For j = 1 To cols
-        tbl.Table.Cell(1, j).Shape.TextFrame.TextRange.Text = hdrArr(j - 1)
-        tbl.Table.Cell(1, j).Shape.TextFrame.TextRange.Font.Bold = True
+        With tbl.Table.Cell(1, j).Shape.TextFrame.TextRange
+            .Text = hdrArr(j - 1)
+            .Font.Bold = True
+        End With
     Next j
     
     '--- body rows ---
     For i = 0 To UBound(data)
-        Dim cells As Variant
-        cells = Split(data(i), "|")
+        Dim cells As Variant: cells = Split(data(i), "|")
         For j = 1 To cols
             cellText = IIf(j <= UBound(cells) + 1, cells(j - 1), "")
             If allowMultiLines Then cellText = Replace(cellText, "¶", vbCrLf)
             tbl.Table.Cell(i + 2, j).Shape.TextFrame.TextRange.Text = cellText
         Next j
     Next i
-    tbl.Table.Columns(1).Width = 160   ' adjust widths a bit
+    
+    ' tweak column widths (optional)
+    tbl.Table.Columns(1).Width = 160
     tbl.Table.Columns(2).Width = 420
     tbl.Table.Columns(tbl.Table.Columns.Count).Width = 210
 End Sub
