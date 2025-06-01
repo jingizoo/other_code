@@ -1,0 +1,236 @@
+# BigQuery Extract → GCS → BigQuery **Upload & Reconciliation** Wiki
+
+> **Purpose**
+> Single‑stop reference for the end‑to‑end pipeline that streams data out of **PeopleSoft**, lands them as **Parquet**, stages to **GCS**, loads into **BigQuery**, *and then proves the numbers match*.
+
+---
+
+## 1. High‑Level Architecture
+
+```mermaid
+flowchart TD
+    subgraph On‑Prem / VM
+        PSDB[[PeopleSoft DB\n(SQL Server)]]
+    end
+    Extract[related_extract.py / writer.py\n⇢ Parquet chunks]
+    LocalFS[(Local Staging\n\\share\\parquet)]
+    Upload[upload_gcs.py]
+    GCS[(GCS Bucket\n<module>/FY<yyyy>)]
+    Terraform[gen_terraform.py]
+    TFApply[terraform apply]
+    BQ[(BigQuery Dataset)]
+    Recon[recon_counts.py\n⇢ Δ dashboard]
+
+    PSDB -->|stream| Extract
+    Extract --> LocalFS
+    LocalFS --> Upload
+    Upload --> GCS
+    Terraform --> TFApply
+    TFApply --> BQ
+    GCS -->|bq load / ext| BQ
+    PSDB -. src counts .-> Recon
+    BQ -. tgt counts .-> Recon
+```
+
+---
+
+## 2. End‑to‑End Ladder
+
+| # | Phase              | Script / Tool                          | Key Output                                             |
+| - | ------------------ | -------------------------------------- | ------------------------------------------------------ |
+| 1 | **Extract**        | `related_extract.py`                   | `<MODULE>/FY2025/LEDGER_2025.parquet`                  |
+| 2 | **Stage / Upload** | `upload_gcs.py`                        | `gs://bucket/AP/FY2025/…`                              |
+| 3 | **Provision**      | `gen_terraform.py` → `terraform apply` | `dataset.PS_LEDGER` empty table or external definition |
+| 4 | **Load**           | Cloud Composer DAG or manual `bq load` | Populated BigQuery partitions                          |
+| 5 | **Reconcile**      | `recon_counts.py` + Looker Studio      | Δ = 0 ✅ / alert 🔔                                     |
+
+---
+
+## 3. Extraction Deep‑Dive
+
+### 3.1 Candidate Selection
+
+```sql
+-- RECTYPE 0 = table, 1 = SQL view
+SELECT RECNAME
+  FROM PSRECDEFN
+ WHERE RECTYPE IN (0,1);
+```
+
+*Physical* table name = `PS_<RECNAME>` (helper `_psname()`)
+
+### 3.2 Chunked Streaming Logic (Python)
+
+```python
+for sql_name in candidates:
+    cursor.execute(f"SELECT * FROM {sql_name}")
+    for chunk in iter_chunks(cursor, size=CHUNK_SIZE):
+        table_writer.write(chunk)
+```
+
+* Column types auto‑promote to **string** when heterogenous.
+* Rows lacking a determinable date → `FY2099` Parquet folder.
+
+### 3.3 Parquet Layout
+
+```
+<module>/FY2025/
+  VCHR_ACCTG_LINE_2025.parquet
+<module>/FY2099/
+  VCHR_ACCTG_LINE_2099.parquet   # orphans
+```
+
+---
+
+## 4. Upload / Stage to GCS
+
+1. **One‑Time Delete** — Prior objects under the same table prefix are wiped *once* per execution.
+2. **Smart Skip** — `blob_exists_same_size()` short‑circuits re‑uploads when file size matches.
+3. **Parallel Composite Uploads** — Enabled by default; override with `--no-parallel` if firewall blocks it.
+
+```bash
+python upload_gcs.py prod -m AP AR --dry-run   # preview
+python upload_gcs.py prod -m AP AR             # execute
+```
+
+---
+
+## 5. Load / Refresh in BigQuery
+
+### 5.1 Table Provisioning via Terraform
+
+* Generated resources include:
+
+  * Time partitioning on `UUID_FY`
+  * Clustering on the first 4 business‑critical columns (overrideable)
+  * Option flag `external = true/false`
+
+```hcl
+resource "google_bigquery_table" "ps_ledger" {
+  table_id   = "PS_LEDGER"
+  dataset_id = "finsup_prod"
+  time_partitioning {
+    type  = "YEAR"
+    field = "UUID_FY"
+  }
+}
+```
+
+### 5.2 Two Loading Strategies
+
+| Mode                    | When to Use                          | Pros                            | Cons                               |
+| ----------------------- | ------------------------------------ | ------------------------------- | ---------------------------------- |
+| **Managed** (`bq load`) | Large fact tables queried heavily    | Fast queries, partition pruning | Extra load step                    |
+| **External**            | Reference/dimension data, quick POCs | Zero‑copy, instant              | Each query scans GCS (slower/\$\$) |
+
+**Managed example:**
+
+```bash
+bq load --source_format=PARQUET \
+  --replace \
+  finsup_prod.PS_LEDGER \
+  "gs://finsup/AP/FY2025/LEDGER_2025.parquet"
+```
+
+---
+
+## 6. Reconciliation Deep‑Dive
+
+### 6.1 Core SQL
+
+```sql
+WITH src AS (
+  SELECT COUNT(1) AS rows_src
+    FROM PS_LEDGER WITH (NOLOCK)
+   WHERE FISCAL_YEAR = 2025
+), tgt AS (
+  SELECT COUNT(1) AS rows_tgt
+    FROM `finsup_prod.PS_LEDGER`
+   WHERE UUID_FY = 2025
+)
+SELECT rows_src, rows_tgt,
+       rows_tgt - rows_src AS delta,
+       SAFE_DIVIDE(rows_tgt - rows_src, rows_src) * 100 AS pct
+FROM src, tgt;
+```
+
+### 6.2 Python CLI (`recon_counts.py`)
+
+* Pulls per‑FY counts from SQL Server and BigQuery.
+* Writes to `recon.audit_uploads` table (`src_cnt`, `tgt_cnt`, `delta`, `run_id`).
+* Thresholds: Δ > 0.5 % **or** |Δ| > 10 ⇒ Slack alert.
+
+```bash
+python recon_counts.py --table PS_LEDGER --fy 2025 --alert
+```
+
+### 6.3 Dashboard
+
+Looker Studio tiles:
+
+* **Bar**: top‑10 tables by Δ rows
+* **Line**: daily success rate (100 %‑Δ tables / total tables)
+* **Table**: drill‑down with FY granularity
+
+---
+
+## 7. Monitoring & Logging
+
+| Component       | Where to Look                                               |
+| --------------- | ----------------------------------------------------------- |
+| Extract scripts | Rotating logs in `logs/extract_*.log`                       |
+| GCS transfer    | Cloud Logging → `resource.type="gcs_bucket" label."psdata"` |
+| BigQuery load   | `bq jobs list --state=FAILURE`                              |
+| Recon alerts    | Slack channel `#psdata‑alerts`                              |
+
+---
+
+## 8. Troubleshooting Cheat‑Sheet
+
+| Symptom                                     | Diagnosis                        | Action                                                 |
+| ------------------------------------------- | -------------------------------- | ------------------------------------------------------ |
+| `ArrowInvalid: Unable to convert timestamp` | Mixed dtype across chunks        | Add column to `dtype_overrides` or cast earliest chunk |
+| BQ row count < source                       | Some Parquet skipped by wildcard | Verify `source_uris`; rerun `bq load` for missing file |
+| Terraform drift                             | New column in PSDB               | Regenerate & apply Terraform                           |
+| Upload slow                                 | Serial upload                    | Add `--parallel 8` or bump composite size              |
+
+---
+
+## 9. CLI Pocket Reference
+
+```bash
+# Extract 2024‑25 for AP & AR
+python related_extract.py prod -m AP AR --start-fy 2024 --end-fy 2025
+
+# Bulk GCS upload
+python upload_gcs.py prod -m AP AR
+
+# Provision / update schema
+python gen_terraform.py --env prod > terraform/bq_tables.tf
+terraform apply -auto-approve
+
+# Load a single FY partition
+bq load --source_format=PARQUET finsup.PS_LEDGER gs://bucket/AP/FY2025/LEDGER_2025.parquet
+
+# Reconcile and alert
+python recon_counts.py --table PS_LEDGER --fy 2025 --alert
+```
+
+---
+
+## 10. Glossary
+
+| Term               | Meaning                                     |
+| ------------------ | ------------------------------------------- |
+| **UUID\_FY**       | Numeric fiscal year (clustering key)        |
+| **FY2099**         | Orphan bucket when no date available        |
+| **Chunk**          | Single Parquet slice (\~100 k rows)         |
+| **Managed Table**  | BigQuery table that stores data internally  |
+| **External Table** | BigQuery table that reads directly from GCS |
+
+---
+
+> **Next Steps:**
+> • Embed the Mermaid diagram in Confluence.
+> • Decide per‑module whether to load or externalise.
+> • Hook `recon_counts.py` into your Cloud Composer DAG for nightly assurance.
