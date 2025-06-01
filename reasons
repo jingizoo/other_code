@@ -1,0 +1,8 @@
+| Current text (for reference)                                                            | Polished wording                                                                                           |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Ignored due to attachment data. Please advise if we backup attachments as documents** | **Skipped – contains BLOB/attachment payloads.<br>Load only if an attachment-backup strategy is defined.** |
+| **Ignored as this is a log table and large size**                                       | **Skipped – high-volume audit/log table; size is prohibitive for routine loads.**                          |
+| **Special handling required for ingestion. Ignored. Can be considered if important**    | **Deferred – requires specialised ingestion (e.g., CDC/streaming). Load on demand if business-critical.**  |
+| **Too large. Can be extracted if required**                                             | **Deferred – very large dataset; ingest only on request.**                                                 |
+| *(dup. of previous “special handling” row)*                                             | *(Use the same polished wording as above to keep the sheet consistent.)*                                   |
+| **Created as reporte in Big Query**                                                     | **Already materialised in BigQuery as a reporting table.**                                                 |
