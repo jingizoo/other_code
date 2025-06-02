@@ -17,3 +17,9 @@ resource "google_bigquery_dataset" "peoplesoft_archive" {
 terraform import \
   google_bigquery_dataset.peoplesoft_archive \
   cig-accounting-dev-1:peoplesoft_archive
+
+terraform show -json tfplan.bin \
+  | jq -r '
+      .resource_changes[]
+      | select(.change.actions | index("delete"))
+      | .address'
