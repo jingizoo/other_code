@@ -91,3 +91,18 @@ terraform import module.gcs_storage_bucket_blackline.google_storage_bucket.gcs_b
 # ----- 3) BigQuery dataset ------------------------------------------
 terraform import google_bigquery_dataset.peoplesoft_archive \
   cig-accounting-dev-1:peoplesoft_archive
+
+
+# 1. Find the lien ID
+PROJECT_NUM=$(gcloud projects describe cig-accounting-dev-1 \
+               --format='value(projectNumber)')
+gcloud alpha resource-manager liens list \
+  --parent="projects/$PROJECT_NUM" \
+  --format='value(name)'
+
+# Example output
+# projects/123456789012/liens/4e91d181-2f9e-4bfa-b3f2-76c2cb3f8b1e
+
+# 2. Import it
+terraform import google_resource_manager_lien.lien \
+  projects/123456789012/liens/4e91d181-2f9e-4bfa-b3f2-76c2cb3f8b1e
