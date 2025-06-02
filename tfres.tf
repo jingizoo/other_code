@@ -13,3 +13,7 @@ resource "google_bigquery_dataset" "peoplesoft_archive" {
     team = "accounting"
   }
 }
+
+terraform import \
+  google_bigquery_dataset.peoplesoft_archive \
+  cig-accounting-dev-1:peoplesoft_archive
