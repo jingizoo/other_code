@@ -71,3 +71,23 @@ module "gcs_storage_bucket_concur" {
 
   extra_labels = {}
 }
+
+# ----- 1) stand-alone buckets declared directly in main.tf ----------
+terraform import google_storage_bucket.peoplesoft-cold-storage-archieve \
+  projects/_/buckets/peoplesoft-cold-storage-archieve
+
+terraform import google_storage_bucket.cig-accounting-opkey-dev-data-1 \
+  projects/_/buckets/cig-accounting-opkey-dev-data-1
+
+
+# ----- 2) buckets created *inside* the two modules ------------------
+terraform import module.gcs_storage_bucket_concur.google_storage_bucket.gcs_bucket \
+  projects/_/buckets/cig-concur-dev
+
+terraform import module.gcs_storage_bucket_blackline.google_storage_bucket.gcs_bucket \
+  projects/_/buckets/cig-blackline-dev
+
+
+# ----- 3) BigQuery dataset ------------------------------------------
+terraform import google_bigquery_dataset.peoplesoft_archive \
+  cig-accounting-dev-1:peoplesoft_archive
