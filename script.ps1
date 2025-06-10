@@ -1,131 +1,97 @@
-Below is a **ready-to-run PowerShell 7 script** that
-
-1. finds every table in a BigQuery dataset that contains a column named `fy_partition`, and
-2. deletes the rows whose `fy_partition = <Year>`.
-
-Save it as **`Delete-FyPartition.ps1`**, tweak the parameters, and run.
-
-```powershell
 <#
-.SYNOPSIS
-    Delete one fiscal-year slice (fy_partition) from all tables in a BigQuery dataset.
+Delete-FyPartition-Json.ps1
+--------------------------
+Remove one fy_partition slice from all tables in a BigQuery dataset,
+using JSON output from `bq query`.
 
-.DESCRIPTION
-    • Lists tables whose schema includes a column called fy_partition  
-    • Executes DELETE … WHERE fy_partition = <Year> on each table
-
-    Prerequisites
-      – gcloud SDK / bq CLI installed and authenticated
-      – Account has BigQuery Data Editor on the dataset / tables
-      – PowerShell 7 (pwsh) or later
-
-.EXAMPLE
-    ./Delete-FyPartition.ps1 -Project cig-accounting-dev-1 `
-        -Dataset peoplesoft_archive -Year 2015 -Location asia-south1
-
-    # dry-run (prints SQL only)
-    ./Delete-FyPartition.ps1 -Project myproj -Dataset myds -Year 2020 -WhatIf
+Usage
+  pwsh .\Delete-FyPartition-Json.ps1 `
+       -Project  cig-accounting-dev-1 `
+       -Dataset  peoplesoft_archive  `
+       -Year     2015 `
+       -Location asia-south1         # optional
+  # Dry-run
+  … -WhatIf
 #>
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
-    [string]$Project,
-
-    [Parameter(Mandatory)]
-    [string]$Dataset,
-
-    [Parameter(Mandatory)]
-    [int]$Year,
-
-    # Optional BigQuery location/region (us, europe-west2, asia-south1, …)
-    [string]$Location = $null,
-
-    # Switch: show the DELETE statements without executing them
+    [Parameter(Mandatory)][string]$Project,
+    [Parameter(Mandatory)][string]$Dataset,
+    [Parameter(Mandatory)][int]   $Year,
+    [string]$Location,
     [switch]$WhatIf
 )
 
 $ErrorActionPreference = 'Stop'
 
+# ──────────────────────────────────────────────────────────────────────────
 function Invoke-BqJson {
+<#
+Runs a BigQuery SQL string and returns a PowerShell object array
+parsed from the JSON array produced by `bq --format=prettyjson`.
+
+Silently drops any non-JSON lines (job chatter, Python banner, blanks).
+#>
     param([string]$Sql)
 
-    $args = @('--nouse_legacy_sql', '--quiet', '--format=prettyjson')
-    if ($Location) { $args += @('--location', $Location) }
-    $args += $Sql
+    $baseArgs = @('--nouse_legacy_sql', '--quiet', '--format=prettyjson')
+    if ($Location) { $baseArgs += @('--location', $Location) }
+    $baseArgs += $Sql
 
-    & bq query @args
+    $raw = (& bq query @baseArgs 2>&1)                           # capture all output
+    if (-not $raw) { throw 'bq returned no output.' }
+
+    # Keep only lines that look like JSON (start with "[" or "{")
+    $jsonLines = $raw | Where-Object { $_.Trim() -match '^[\[{]' }
+
+    if (-not $jsonLines) {
+        throw "No JSON payload detected in bq output. Raw output:`n$($raw -join "`n")"
+    }
+
+    # Join the JSON lines back into a single string and parse
+    $jsonText = $jsonLines -join "`n"
+    return $jsonText | ConvertFrom-Json
 }
 
-try {
-    Write-Host "► Gathering tables that contain 'fy_partition' in $Project.$Dataset …" -Foreground Cyan
+# ──────────────────────────────────────────────────────────────────────────
+Write-Host "`n► Gathering tables that contain 'fy_partition' in $Project.$Dataset …" `
+           -Foreground Cyan
 
-    # -------- 1. Get table list -------------------------------------------------
-    $tblQuery = @"
+$tblQuery = @"
 SELECT DISTINCT table_name
-FROM   ``$Project.$Dataset.INFORMATION_SCHEMA.COLUMNS``
+FROM   `$Project.$Dataset.INFORMATION_SCHEMA.COLUMNS`
 WHERE  LOWER(column_name) = 'fy_partition'
 "@
 
-    $tableObjs  = Invoke-BqJson $tblQuery | ConvertFrom-Json
-    $tableNames = $tableObjs | Select-Object -ExpandProperty table_name
+$tableObjs  = Invoke-BqJson $tblQuery
+$tableNames = $tableObjs | Select-Object -ExpandProperty table_name
 
-    if (-not $tableNames) {
-        Write-Warning "No tables contain fy_partition — nothing to delete."
-        return
+if (-not $tableNames) {
+    Write-Warning 'No tables contain fy_partition — nothing to delete.'
+    return
+}
+
+Write-Host "✔  Found $($tableNames.Count) table(s)." -Foreground Green
+
+# ──────────────────────────────────────────────────────────────────────────
+foreach ($tbl in $tableNames) {
+    $fullId = "``$Project.$Dataset.$tbl``"      # escape back-ticks for BigQuery
+    $delSql = "DELETE FROM $fullId WHERE fy_partition = $Year;"
+
+    if ($WhatIf) {
+        Write-Host "[WHATIF] $delSql"
+        continue
     }
 
-    Write-Host ("✔ Found {0} table(s)." -f $tableNames.Count) -Foreground Green
-
-    # -------- 2. Delete rows ----------------------------------------------------
-    foreach ($tbl in $tableNames) {
-        $fullId = ("``{0}.{1}.{2}``" -f $Project, $Dataset, $tbl)   # back-ticks escaped
-        $delSql = "DELETE FROM $fullId WHERE fy_partition = $Year;"
-
-        if ($WhatIf) {
-            Write-Host "[WHATIF] $delSql"
-            continue
-        }
-
-        Write-Host ("→ Deleting FY{0} rows from {1} …" -f $Year, $tbl) -Foreground Yellow
-        try {
-            Invoke-BqJson $delSql | Out-Null
-            Write-Host "   ✓ Done" -Foreground Green
-        }
-        catch {
-            Write-Warning "   ⚠ Failed on $tbl : $_"
-        }
+    Write-Host ("→ Deleting FY{0} rows from {1} …" -f $Year, $tbl) -Foreground Yellow
+    try {
+        Invoke-BqJson $delSql | Out-Null        # run DELETE, ignore JSON reply
+        Write-Host "   ✓ Done" -Foreground Green
     }
-
-    if (-not $WhatIf) { Write-Host "All deletions complete." -Foreground Green }
+    catch {
+        Write-Warning "   ⚠ Failed on $tbl : $_"
+    }
 }
-catch {
-    Write-Error $_
-}
-```
 
-**How to use**
-
-```powershell
-# real delete
-pwsh ./Delete-FyPartition.ps1 `
-     -Project cig-accounting-dev-1 `
-     -Dataset peoplesoft_archive `
-     -Year    2015 `
-     -Location asia-south1
-
-# dry-run first
-pwsh ./Delete-FyPartition.ps1 -Project myproj -Dataset myds -Year 2020 -WhatIf
-```
-
-Key points handled:
-
-| Issue                               | How the script deals with it                         |
-| ----------------------------------- | ---------------------------------------------------- |
-| CSV header `table_name` sneaking in | Uses `--format=prettyjson` → header-less JSON        |
-| CLI noise (“Waiting on job…”)       | `--quiet` flag                                       |
-| Back-ticks disappearing             | Every literal back-tick is doubled (\`\`) in strings |
-| Empty result set                    | Early exit with a clear warning                      |
-| Safe preview                        | `-WhatIf` switch prints SQL but skips execution      |
-
-Drop this into your repo, parameterise it in a CI job if you like, and you have a repeatable fiscal-year cleanup utility. Let me know if you hit any corner cases!
+if (-not $WhatIf) { Write-Host "`nAll deletions complete." -Foreground Green }
