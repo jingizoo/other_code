@@ -1,6 +1,4 @@
-Below is a lightweight, “getting‑started” wiki page you can drop straight into Confluence, SharePoint, or a Markdown‑compatible repository. It focuses on the single most important task—**finding and selecting the right table or psquery**—and then walks users through the minimal steps needed to explore data or build a new workbook. Feel free to extend each section with screenshots, data‑governance links, or contact names that are specific to your environment.
 
----
 
 ## 1  |  Purpose
 
