@@ -1,6 +1,28 @@
 #!/usr/bin/env python3
 """
 clean_fy.py — One‑stop fiscal‑year cleanup for **BigQuery** rows *and* **GCS** objects.
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Clean FY (no debug)",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/clean_fy.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "args": [
+        "--project", "cig-accounting-dev-1",
+        "--dataset", "ps_archive",
+        "--bucket", "peoplesoft-cold-storage-archieve",
+        "--root", "finsup",
+        "--year", "2015",
+        "--dry-run"
+      ]
+    }
+  ]
+}
 
 Features
 ~~~~~~~~~
