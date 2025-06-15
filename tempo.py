@@ -153,6 +153,27 @@ def label_to_buckets(labels: list[str] | None) -> tuple[str, str]:
 
 AREA_MAP = {"TransUnion PeopleSoft": "PeopleSoft", "Coupa": "Coupa", "OneStream": "OneStream/PS"}
 
+from functools import lru_cache
+
+@lru_cache(maxsize=1024)
+def account_id_to_name(account_id: str) -> str | None:
+    """
+    Convert an Atlassian accountId to a display name.
+    Caches results so we hit the /user endpoint once per id.
+    """
+    try:
+        r = requests.get(
+            f"{JIRA_BASE}/user",
+            headers=JIRA_HEAD,
+            params={"accountId": account_id},
+            timeout=20,
+            verify=VERIFY_SSL,
+        )
+        r.raise_for_status()
+        return r.json().get("displayName")
+    except requests.HTTPError:
+        return None
+
 # ───────────────────────── 6 · ENRICH & UTILISE ─────────────────────────────
 
 def enrich(df_flat: pd.DataFrame):
