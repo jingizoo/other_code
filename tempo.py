@@ -229,15 +229,34 @@ if __name__ == "__main__":
     util_df, enriched_df = enrich(df_flat)
 
     # write Excel with auto‑width for better readability
-    with pd.ExcelWriter("utilisation_matrix.xlsx", engine="xlsxwriter") as xl:
+    excel_engine = None
+    for eng in ("xlsxwriter", "openpyxl"):
+        try:
+            __import__(eng)
+            excel_engine = eng
+            break
+        except ModuleNotFoundError:
+            continue
+    if not excel_engine:
+        sys.exit("❌  Install 'xlsxwriter' or 'openpyxl' to create Excel files.")
+
+    with pd.ExcelWriter("utilisation_matrix.xlsx", engine=excel_engine) as xl:
         util_df.to_excel(xl, sheet_name="Raw", index=False)
-        p = util_df.pivot_table(index=["area", "project_key", "module", "user"], columns="week", values="hours", aggfunc="sum", fill_value=0)
-        p.to_excel(xl, sheet_name="Pivot")
-        for sheet in ("Raw", "Pivot"):
-            ws = xl.sheets[sheet]
-            for idx, col in enumerate(ws.columns):  # autofit columns
-                length = max(12, max(len(str(x)) for x in col) + 2)
-                ws.set_column(idx, idx, length)
+        pivot_df = util_df.pivot_table(
+            index=["area", "project_key", "module", "user"],
+            columns="week", values="hours", aggfunc="sum", fill_value=0,
+        )
+        pivot_df.to_excel(xl, sheet_name="Pivot")
+
+        # auto‑width only when xlsxwriter is active
+        if excel_engine == "xlsxwriter":
+            def autofit(ws, dataframe):
+                for idx, col in enumerate(dataframe.columns, start=0):
+                    series = dataframe[col].astype(str)
+                    maxlen = max(series.map(len).max(), len(str(col))) + 2
+                    ws.set_column(idx, idx, maxlen)
+            autofit(xl.sheets["Raw"], util_df)
+            autofit(xl.sheets["Pivot"], pivot_df)
 
     enriched_df.to_parquet("enriched_worklogs.parquet", index=False)
     print(f"🏁 done – {len(util_df):,} rows → utilisation_matrix.xlsx")
