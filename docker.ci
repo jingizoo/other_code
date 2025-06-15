@@ -1,0 +1,27 @@
+# peoplesoft_data_archive_partitions/Dockerfile
+FROM python:3.12-slim
+
+# ---- OS tools you might need ----------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc build-essential && \
+    rm -rf /var/lib/apt/lists/*    # ②  see note below
+
+# ---- copy source ----------------------------------------------------
+WORKDIR /opt/app
+
+# ① copy *only* the code we need, keeping build context small
+COPY src/main/python/ src/main/python/
+COPY pyproject.toml requirements.txt ./
+
+# ---- install Python deps --------------------------------------------
+# Choose whichever you use; comment the other
+# RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir typer[all]
+
+# ---- make code importable -------------------------------------------
+# Your package lives at   /opt/app/src/main/python/psdata/…
+ENV PYTHONPATH=/opt/app/src/main/python
+
+# ---- generic entrypoint ---------------------------------------------
+ENTRYPOINT ["python", "-m"]
+CMD ["psdata.etl.upload_gcs"]
