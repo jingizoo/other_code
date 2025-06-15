@@ -102,7 +102,17 @@ def flatten(records: List[Dict[str, Any]]) -> pd.DataFrame:
     for c in EXPECT:
         df[c] = df.get(c, pd.NA)
     # resolve user name
-    df["user"] = df.apply(lambda r: r["user"] or account_id_to_name(str(r["user_id"])) or r["user_id"], axis=1)
+    def _resolve_user(row):
+        if pd.notna(row["user"]) and str(row["user"]).strip():
+            return row["user"]
+        if pd.notna(row.get("user_id")):
+            name = account_id_to_name(str(row["user_id"]))
+            if name:
+                return name
+            return row["user_id"]
+        return "Unknown"
+
+    df["user"] = df.apply(_resolve_user, axis=1)
     df.drop(columns="user_id", inplace=True, errors="ignore")
     df["hours"]          = df.get("sec", pd.Series(dtype=float)) / 3600
     df["billable_hours"] = df.get("billable_sec", pd.Series(dtype=float)) / 3600
