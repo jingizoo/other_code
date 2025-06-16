@@ -197,3 +197,43 @@ Save → enable schedule → done.
 * **Dev flow**: `./gradlew dockerfile` + `./build/Dockerfile.python.sh` to test.
 * **CI flow**: CDX auto-builds & auto-pushes tags each merge.
 * **Ops flow**: Scheduler just selects `:soft` or `:nonstop` and runs.
+# psdata/soft_archive.py
+```
+from google.cloud import bigquery
+import logging
+import datetime as dt
+
+def snapshot_then_delete(
+    client: bigquery.Client,
+    project: str,
+    dataset: str,
+    table: str,
+    year: int,
+    dry_run: bool = False,
+):
+    ts = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    src  = f"`{project}.{dataset}.{table}`"
+    snap = f"`{project}.{dataset}.__snap_{table}_{ts}`"
+
+    # 1) make snapshot (zero-copy clone valid for 7 days unless you keep it longer)
+    snap_sql = f"CREATE SNAPSHOT TABLE {snap} CLONE {src} OPTIONS(expiration_timestamp=TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 30 DAY))"
+    # 2) run delete
+    del_sql  = f"DELETE FROM {src} WHERE fy_partition = @year"
+
+    if dry_run:
+        logging.info("[DRY-RUN] would run:\n%s;\n%s;\n", snap_sql, del_sql)
+        return
+
+    logging.info("↪︎ snapshotting rows to %s", snap)
+    client.query(snap_sql).result()
+
+    logging.info("✂︎ deleting fiscal-year %s from %s", year, src)
+    job = client.query(
+        del_sql,
+        job_config=bigquery.QueryJobConfig(
+            query_parameters=[bigquery.ScalarQueryParameter("year", "INT64", year)]
+        ),
+    )
+    job.result()
+    logging.info("✓ %d row(s) deleted; snapshot keeps full copy", job.num_dml_affected_rows)
+```
