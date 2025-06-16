@@ -71,28 +71,28 @@ def _iter_rows(env: str) -> Iterable[dict]:
             ]
 
             for tbl in rel_tables:
-                for part, tbls in present.items():
-                    if tbl not in tbls:
-                        continue
-
-                    if part.startswith("FY") and part != "FY2099":
-                        # derive FY window for display
-                        fy = int(part[2:])
+                for tbl in rel_tables:
+    # ── one row for every FY that WILL be extracted ──
+                    for fy in range(first_fy, last_fy + 1):
                         start = pd.Timestamp(year=fy - 1, month=cfg.fy_start_month, day=1)
-                        end   = pd.Timestamp(year=fy    , month=cfg.fy_start_month, day=1) - pd.Timedelta(days=1)
-                        crit  = f"{mcfg.date_col} between {start:%Y-%m-%d}/{end:%Y-%m-%d}"
-                    elif part == "FY2099":
-                        crit = "orphan rows (no hit in date_table)"
-                    else:           # static
-                        crit = "static table (no FY slicing)"
-
+                        end   = pd.Timestamp(year=fy, month=cfg.fy_start_month, day=1) - pd.Timedelta(days=1)
+                        yield {
+                            "module": mod,
+                            "table": tbl,
+                            "parent_table": mcfg.key_table.upper(),
+                            "partition": f"FY{fy}",
+                            "criteria": f"{mcfg.date_col} between {start:%Y-%m-%d}/{end:%Y-%m-%d}",
+                        }
+                
+                    # ── one virtual bucket for orphans ──
                     yield {
                         "module": mod,
                         "table": tbl,
                         "parent_table": mcfg.key_table.upper(),
-                        "partition": part,
-                        "criteria": crit,
+                        "partition": "FY2099",
+                        "criteria": "orphan rows (no match in date_table)",
                     }
+
 
 
 @app.command()
