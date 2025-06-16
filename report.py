@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 archive_report.py ─ Summarise the output of related_extract_v2.py
-
+criteria = (
+    f"Fiscal year (`{criteria_column}`) for each row in {table} is derived "
+    f"from the {criteria_column} value in {criteria_table}."
+)
 For every module configured in psdata.yaml it discovers:
     • All tables whose primary-key starts with the module’s key table keys
     • Every Parquet file written by the extractor (FY-folders, FY2099, static)
