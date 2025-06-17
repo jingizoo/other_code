@@ -1,4 +1,19 @@
-### “Set up a `bin` at the top level” ― what that means and how to do it
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---- resolve repo root (one level above bin/) ----
+ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+
+# ---- make code discoverable ----
+export PYTHONPATH="$ROOT/src/main/python${PYTHONPATH:+:$PYTHONPATH}"
+
+# optional venv activation
+[[ -f "$ROOT/.venv/bin/activate" ]] && source "$ROOT/.venv/bin/activate"
+
+# ---- run the Typer CLI ----
+exec python -m psdata.lifecycle_retention.clean_fy "$@"
+
+\### “Set up a `bin` at the top level” ― what that means and how to do it
 
 In CitSource projects “**bin directory**” usually means *one or more tiny
 shell scripts* checked into `bin/` at the repo root.
