@@ -4,3 +4,6 @@ docker run --rm \
   -w /app/pte/accounting/external-services/acctgateway/data-mesh/peoplesoft_data_archive_partitions \
   ps-partitions:latest \
   python clean_fy.py --fy 2015 --dry-run
+
+
+docker images --no-trunc --format "table {{.ID}}\t{{.CreatedSince}}\t{{.Repository}}\t{{.Tag}}"
