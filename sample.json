@@ -1,0 +1,43 @@
+{
+  "generated_at": "2025-06-15T14:07:22Z",
+  "project_key": "IPTFSR",
+  "days_back": 7,
+  "utilisation": [
+    {
+      "area": "PeopleSoft",
+      "project_key": "IPTFSR",
+      "module": "GL",
+      "category": "Enhancement",
+      "sub_category": ".",
+      "user": "Sainath Balaji",         // fallback is accountId string
+      "week": "2025-06-09",             // Monday of ISO-week (Power BI → date)
+      "hours": 23.5,
+      "util_pct": 58.8                  // (hours / 40 * 100)
+    },
+    {
+      "area": "PeopleSoft",
+      "project_key": "IPTFSR",
+      "module": "Unknown",
+      "category": "Admin",
+      "sub_category": "Audit",
+      "user": "Karthick Raje",
+      "week": "2025-06-09",
+      "hours": 8.0833,
+      "util_pct": 20.2
+    }
+    /* … one object per user-week bucket … */
+  ]
+}
+
+# ── write Power-BI-ready JSON ───────────────────────────────────────────────
+out = {
+    "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    "project_key":  mode if mode != "webhook" else "webhook",
+    "days_back":    days if mode != "webhook" else None,
+    "utilisation":  util_df.to_dict(orient="records"),   # flat records array
+}
+
+with open("utilisation_matrix.json", "w", encoding="utf-8") as f:
+    json.dump(out, f, indent=2)
+
+print(f"✅ wrote utilisation_matrix.json  ({len(util_df)} utilisation rows)")
