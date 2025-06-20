@@ -38,6 +38,16 @@ out = {
 }
 
 with open("utilisation_matrix.json", "w", encoding="utf-8") as f:
-    json.dump(out, f, indent=2)
+    json.dump(
+        out,
+        f,
+        indent=2,
+        default=lambda o: (
+            o.isoformat()                    # pandas Timestamp → ISO string
+            if hasattr(o, "isoformat") else  # datetime-likes
+            int(o)                           # pandas Int64 / numpy int
+            if isinstance(o, (int, float, bool)) and not isinstance(o, bool) else
+            str(o)                           # fallback – everything else
+        ),
+    )
 
-print(f"✅ wrote utilisation_matrix.json  ({len(util_df)} utilisation rows)")
